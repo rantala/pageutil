@@ -198,10 +198,14 @@ done:
 int main(int argc, char** argv)
 {
 	if (argc < 2) {
-		fprintf(stderr, "Usage: pmaps <pid>\n");
+		fprintf(stderr, "Usage: pmaps <pid> [<pid2> ...]\n");
 		return 1;
 	}
 	pagesize = sysconf(_SC_PAGESIZE);
-	pmaps(atoi(argv[1]));
+	for (int i=1; i < argc; ++i) {
+		int pid = atoi(argv[i]);
+		printf("PID: %d\n", pid);
+		pmaps(pid);
+	}
 	return 0;
 }
