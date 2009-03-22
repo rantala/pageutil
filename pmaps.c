@@ -190,6 +190,7 @@ pmaps(int pid)
 		}
 	}
 done:
+	free(line);
 	close(fd_c);
 	close(fd_f);
 	close(fd_p);
