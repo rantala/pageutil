@@ -143,7 +143,8 @@ pmaps(int pid)
 	FILE* maps;
 	int fd_p, fd_f, fd_c;
 	unsigned long start_addr, end_addr;
-	char* line; size_t line_n;
+	char* line=0;
+	size_t line_n;
 	maps = fopen(proc_fn(pid, "maps"), "r");
 	if (!maps) { perror("ERROR: could not open /proc/pid/maps"); exit(1); }
 	fd_p = open(proc_fn(pid, "pagemap"), O_RDONLY);
