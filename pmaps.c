@@ -1,4 +1,6 @@
-/*
+/* This application lists per process memory mappings, and shows for each page
+ * some details that the kernel exposes via various /proc interfaces.
+ *
  * Copyright (C) 2009 Tommi Rantala <tt.rantala@gmail.com>
  * 
  * This program is free software; you can redistribute it and/or modify it
@@ -18,6 +20,7 @@
 
 #define _GNU_SOURCE
 
+#include <getopt.h>
 #include <stdio.h>
 #include <inttypes.h>
 #include <sys/types.h>
@@ -137,8 +140,15 @@ populate(int fd, uint64_t* dest, unsigned long nr)
 	}
 }
 
+typedef enum {
+	SWAPPED_ONLY = 1,
+	RESIDENT_ONLY = 2,
+	STACK_ONLY = 4,
+	HEAP_ONLY = 8,
+} print_flags_t;
+
 static void
-pmaps(int pid)
+pmaps(int pid, print_flags_t pflags)
 {
 	FILE* maps;
 	int fd_p, fd_f, fd_c;
@@ -158,6 +168,13 @@ pmaps(int pid)
 		if (ret == -1) {
 			goto done;
 		}
+		if (pflags & STACK_ONLY) {
+			if (strstr(line, "[stack]") == NULL)
+				continue;
+		} else if (pflags & HEAP_ONLY) {
+			if (strstr(line, "[heap]") == NULL)
+				continue;
+		}
 		if (sscanf(line, "%lx-%lx", &start_addr, &end_addr) != 2) {
 			(void) fprintf(stderr,
 			"ERROR: did not understand line from /proc/pid/maps. :(\n");
@@ -173,20 +190,23 @@ pmaps(int pid)
 			populate(fd_f, pageflags, nr_read);
 			populate(fd_c, pagecount, nr_read);
 			for (unsigned i=0; i < nr_read; ++i) {
-				if (PMAP_PRESENT&pagemap[i]) {
+				if (PMAP_PRESENT&pagemap[i] && !(pflags & SWAPPED_ONLY)) {
 					printf("    %#lx -> pfn:%#08llx count:%4llu flags:%s\n",
 					       start_addr + i*pagesize,
 					       PMAP_PFN&pagemap[i], pagecount[i],
 					       flag2str(pageflags[i]));
-				} else if (PMAP_SWAPPED&pagemap[i]) {
+				} else if (PMAP_SWAPPED&pagemap[i] && !(pflags & RESIDENT_ONLY)) {
 					printf("   #%#lx -> swaptype:%#llx swapoff:%#08llx\n",
 					       start_addr + i*pagesize,
 					       PMAP_SWAP_TYPE&pagemap[i],
 					       (PMAP_SWAP_OFF&pagemap[i])>>5);
-				} else {
+				} else if (!(pflags & (SWAPPED_ONLY|RESIDENT_ONLY))) {
 					printf("   !%#lx\n", start_addr + i*pagesize);
 				}
 			}
+		}
+		if ((pflags & STACK_ONLY) || (pflags & HEAP_ONLY)) {
+			goto done;
 		}
 	}
 done:
@@ -197,17 +217,83 @@ done:
 	fclose(maps);
 }
 
+static struct option long_options[] = {
+	{"swapped", 0, 0, 'S'},
+	{"resident", 0, 0, 'R'},
+	{"stack", 0, 0, 256},
+	{"heap", 0, 0, 257},
+	{"help", 0, 0, 'h'},
+	{0, 0, 0, 0}
+};
+
+static void
+usage()
+{
+	fprintf(stderr,
+		"pmaps: show kernel page state for each page mapped to given process.\n"
+		"\n"
+		"Usage:\n"
+		"           pmaps <pid> [<pid> ...]\n"
+		"\n"
+		"           -R, --resident       Show only resident pages.\n"
+		"           -S, --swapped        Show only pages that have been swapped\n"
+		"                                out to disk.\n"
+		"\n"
+		"               --stack          Show only pages for process stack, identified\n"
+		"                                by [stack] in /proc/pid/maps.\n"
+		"               --heap           Show only pages for process heap, identified\n"
+		"                                by [heap] in /proc/pid/maps.\n"
+	       );
+}
+
 int main(int argc, char** argv)
 {
-	if (argc < 2) {
-		fprintf(stderr, "Usage: pmaps <pid> [<pid2> ...]\n");
+	int opt;
+	print_flags_t pflags = 0;
+	while ((opt = getopt_long(argc, argv, "SRh",
+			long_options, NULL)) != -1) {
+		switch(opt) {
+		case 'S':
+			pflags |= SWAPPED_ONLY;
+			break;
+		case 'R':
+			pflags |= RESIDENT_ONLY;
+			break;
+		case 256:
+			pflags |= STACK_ONLY;
+			break;
+		case 257:
+			pflags |= HEAP_ONLY;
+			break;
+		case 'h':
+			usage();
+			/* fall through */
+		default:
+			break;
+		}
+	}
+	if ((pflags & SWAPPED_ONLY) && (pflags & RESIDENT_ONLY)) {
+		fprintf(stderr, "pmaps: please define either -S or -R.\n");
+		return 1;
+	}
+	if ((pflags & STACK_ONLY) && (pflags & HEAP_ONLY)) {
+		fprintf(stderr, "pmaps: please define either --stack or --heap.\n");
+	}
+	if (optind >= argc) {
+		fprintf(stderr, "Usage: pmaps [--resident|--swapped] [--stack|--heap] <pid> [<pid> ...]\n");
 		return 1;
 	}
 	pagesize = sysconf(_SC_PAGESIZE);
-	for (int i=1; i < argc; ++i) {
+	for (int i=optind; i < argc; ++i) {
 		int pid = atoi(argv[i]);
-		printf("PID: %d\n", pid);
-		pmaps(pid);
+		const char* note1 = "";
+		const char* note2 = "";
+		if (pflags & RESIDENT_ONLY) note1 = " [resident-pages-only]";
+		if (pflags & SWAPPED_ONLY)  note1 = " [swapped-pages-only]";
+		if (pflags & STACK_ONLY)    note2 = " [stack-only]";
+		if (pflags & HEAP_ONLY)     note2 = " [heap-only]";
+		printf("PID: %d%s%s\n", pid, note1, note2);
+		pmaps(pid, pflags);
 	}
 	return 0;
 }
