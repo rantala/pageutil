@@ -322,7 +322,7 @@ int main(int argc, char** argv)
 		if (pflags & STACK_ONLY)    note2 = " [stack-only]";
 		if (pflags & HEAP_ONLY)     note2 = " [heap-only]";
 		printf("PID: %d%s%s\n", pid, note1, note2);
-		pmaps(pid, pflags, &regex);
+		pmaps(pid, pflags, regstr ? &regex : NULL);
 	}
 	if (regstr) regfree(&regex);
 	return 0;
