@@ -20,6 +20,7 @@
 
 #define _GNU_SOURCE
 
+#include <regex.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <inttypes.h>
@@ -148,7 +149,7 @@ typedef enum {
 } print_flags_t;
 
 static void
-pmaps(int pid, print_flags_t pflags)
+pmaps(int pid, print_flags_t pflags, regex_t* regex)
 {
 	FILE* maps;
 	int fd_p, fd_f, fd_c;
@@ -173,6 +174,9 @@ pmaps(int pid, print_flags_t pflags)
 				continue;
 		} else if (pflags & HEAP_ONLY) {
 			if (strstr(line, "[heap]") == NULL)
+				continue;
+		} else if (regex) {
+			if (regexec(regex, line, 0, NULL, 0) != 0)
 				continue;
 		}
 		if (sscanf(line, "%lx-%lx", &start_addr, &end_addr) != 2) {
@@ -222,6 +226,7 @@ static struct option long_options[] = {
 	{"resident", 0, 0, 'R'},
 	{"stack", 0, 0, 256},
 	{"heap", 0, 0, 257},
+	{"grep", 1, 0, 258},
 	{"help", 0, 0, 'h'},
 	{0, 0, 0, 0}
 };
@@ -239,6 +244,8 @@ usage()
 		"           -S, --swapped        Show only pages that have been swapped\n"
 		"                                out to disk.\n"
 		"\n"
+		"               --grep=REGEX     Only show mappings for lines from /proc/pid/maps\n"
+		"                                that match the regular expression REGEX.\n"
 		"               --stack          Show only pages for process stack, identified\n"
 		"                                by [stack] in /proc/pid/maps.\n"
 		"               --heap           Show only pages for process heap, identified\n"
@@ -250,7 +257,9 @@ int main(int argc, char** argv)
 {
 	int opt;
 	print_flags_t pflags = 0;
-	while ((opt = getopt_long(argc, argv, "SRh",
+	char* regstr = NULL;
+	regex_t regex;
+	while ((opt = getopt_long(argc, argv, "r:SRh",
 			long_options, NULL)) != -1) {
 		switch(opt) {
 		case 'S':
@@ -264,6 +273,9 @@ int main(int argc, char** argv)
 			break;
 		case 257:
 			pflags |= HEAP_ONLY;
+			break;
+		case 258:
+			regstr = optarg;
 			break;
 		case 'h':
 			usage();
@@ -279,11 +291,28 @@ int main(int argc, char** argv)
 	if ((pflags & STACK_ONLY) && (pflags & HEAP_ONLY)) {
 		fprintf(stderr, "pmaps: please define either --stack or --heap.\n");
 	}
+	if (regstr && ((pflags & STACK_ONLY) || (pflags & HEAP_ONLY))) {
+		fprintf(stderr, "pmaps: please define either --grep, --stack or --heap.\n");
+	}
 	if (optind >= argc) {
-		fprintf(stderr, "Usage: pmaps [--resident|--swapped] [--stack|--heap] <pid> [<pid> ...]\n");
+		fprintf(stderr, "Usage: pmaps [--resident|--swapped] [--grep=REGEX|--stack|--heap] <pid> [<pid> ...]\n");
 		return 1;
 	}
 	pagesize = sysconf(_SC_PAGESIZE);
+	if (regstr) {
+		int comp;
+		if ((comp = regcomp(&regex, regstr, REG_EXTENDED|REG_NOSUB)) != 0) {
+			char* err = NULL;
+			size_t errlen = regerror(comp, &regex, NULL, 0);
+			if ((err = malloc(errlen)) != NULL) {
+				regerror(comp, &regex, err, errlen);
+			}
+			fprintf(stderr, "Regex compilation failure: %s\n",
+					err ? err : "(unspecified)");
+			free(err);
+			return 1;
+		}
+	}
 	for (int i=optind; i < argc; ++i) {
 		int pid = atoi(argv[i]);
 		const char* note1 = "";
@@ -293,7 +322,8 @@ int main(int argc, char** argv)
 		if (pflags & STACK_ONLY)    note2 = " [stack-only]";
 		if (pflags & HEAP_ONLY)     note2 = " [heap-only]";
 		printf("PID: %d%s%s\n", pid, note1, note2);
-		pmaps(pid, pflags);
+		pmaps(pid, pflags, &regex);
 	}
+	if (regstr) regfree(&regex);
 	return 0;
 }
