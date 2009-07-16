@@ -190,7 +190,13 @@ pmaps(int pid, print_flags_t pflags, regex_t* regex)
 		x_lseek(fd_p, sizeof(uint64_t)*page_start, SEEK_SET);
 		for (; page_start < page_end; page_start += BSIZE) {
 			unsigned long nr_read = min_ul(page_end-page_start, BSIZE);
-			x_read(fd_p, pagemap, nr_read*sizeof(uint64_t));
+			if (read(fd_p, pagemap, nr_read*sizeof(uint64_t))
+					!= nr_read*sizeof(uint64_t)) {
+				// Reading the /proc/pid/pagemap entry for
+				// /proc/pid/maps [vsyscall] resulted in zero
+				// byte reads. Let's just ignore such cases.
+				continue;
+			}
 			populate(fd_f, pageflags, nr_read);
 			populate(fd_c, pagecount, nr_read);
 			for (unsigned i=0; i < nr_read; ++i) {
