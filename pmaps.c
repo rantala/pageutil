@@ -199,8 +199,10 @@ pmaps(int pid, print_flags_t pflags, regex_t* regex)
 		unsigned long page_start = start_addr / pagesize;
 		unsigned long page_end = end_addr / pagesize;
 		x_lseek(fd_p, sizeof(uint64_t)*page_start, SEEK_SET);
-		for (; page_start < page_end; page_start += BSIZE) {
-			unsigned long nr_read = min_ul(page_end-page_start, BSIZE);
+		unsigned long nr_read = 0;
+		unsigned long nr_read_total = 0;
+		for (; page_start < page_end; page_start += BSIZE, nr_read_total += nr_read) {
+			nr_read = min_ul(page_end-page_start, BSIZE);
 			if (read(fd_p, pagemap, nr_read*sizeof(uint64_t))
 					!= nr_read*sizeof(uint64_t)) {
 				// Reading the /proc/pid/pagemap entry for
@@ -213,16 +215,17 @@ pmaps(int pid, print_flags_t pflags, regex_t* regex)
 			for (unsigned i=0; i < nr_read; ++i) {
 				if (PMAP_PRESENT&pagemap[i] && !(pflags & SWAPPED_ONLY)) {
 					printf("    %#lx -> pfn:%#08llx count:%4llu flags:%s\n",
-					       start_addr + i*pagesize,
+					       start_addr + (nr_read_total+i)*pagesize,
 					       PMAP_PFN&pagemap[i], pagecount[i],
 					       flag2str(pageflags[i]));
 				} else if (PMAP_SWAPPED&pagemap[i] && !(pflags & RESIDENT_ONLY)) {
 					printf("   #%#lx -> swaptype:%#llx swapoff:%#08llx\n",
-					       start_addr + i*pagesize,
+					       start_addr + (nr_read_total+i)*pagesize,
 					       PMAP_SWAP_TYPE&pagemap[i],
 					       (PMAP_SWAP_OFF&pagemap[i])>>5);
 				} else if (!(pflags & (SWAPPED_ONLY|RESIDENT_ONLY))) {
-					printf("   !%#lx\n", start_addr + i*pagesize);
+					printf("   !%#lx\n",
+					       start_addr + (nr_read_total+i)*pagesize);
 				}
 			}
 		}
