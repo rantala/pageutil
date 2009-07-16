@@ -189,7 +189,7 @@ lib_info_plt(library_t* lib)
 	char* cmd = NULL;
 	char* line = NULL;
 	size_t line_n = 0;
-	if (asprintf(&cmd, "readelf -S %s", lib->path) == -1) {
+	if (asprintf(&cmd, "readelf -WS %s", lib->path) == -1) {
 		fprintf(stderr, PROGNAME ": ERROR: asprintf() failure.\n");
 		exit(1);
 	}
