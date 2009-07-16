@@ -317,6 +317,8 @@ static unsigned
 pltsym_resolved(const library_t* lib, size_t num, int pid)
 {
 	assert(num < lib->pltsyms_cnt);
+	// Skip the first three words from the .got.plt, the actual entries
+	// begin after those.
 	unsigned long entry_addr = lib->vmas[0].begin + lib->elf_got_plt_off
 		+ 3*lib->word_size + num*lib->word_size;
 	//fprintf(stderr, "%s(): peeking @ %p\n", __func__, (void*)entry_addr);
@@ -391,7 +393,7 @@ usage()
 "\n"
 "Note: Dynamic linker environment variables LD_BIND_NOW and LD_BIND_NOT\n"
 "      affect the symbol resolution process. If these variables have been\n"
-"      defined, results may wary.\n");
+"      defined, results may vary.\n");
 }
 
 static const struct option long_options[] = {
@@ -455,7 +457,7 @@ int main(int argc, char** argv)
 	}
 	if (argc < 2) {
 		fprintf(stderr, "Usage: resolved-symbols [--resolved|--unresolved] [--sort-elfs]\n"
-		                "       [--sort-syms] <pid> [<pid> ...]\n");
+		                "       [--sort-syms] [--grep=REGEX] <pid> [<pid> ...]\n");
 		return 1;
 	}
 	for (int i=optind; i < argc; ++i) {
