@@ -204,7 +204,7 @@ pmaps(int pid, print_flags_t pflags, regex_t* regex)
 		for (; page_start < page_end; page_start += BSIZE, nr_read_total += nr_read) {
 			nr_read = min_ul(page_end-page_start, BSIZE);
 			if (read(fd_p, pagemap, nr_read*sizeof(uint64_t))
-					!= nr_read*sizeof(uint64_t)) {
+					!= (ssize_t)(nr_read*sizeof(uint64_t))) {
 				// Reading the /proc/pid/pagemap entry for
 				// /proc/pid/maps [vsyscall] resulted in zero
 				// byte reads. Let's just ignore such cases.
@@ -216,7 +216,8 @@ pmaps(int pid, print_flags_t pflags, regex_t* regex)
 				if (PMAP_PRESENT&pagemap[i] && !(pflags & SWAPPED_ONLY)) {
 					printf("    %#lx -> pfn:%#08llx count:%4llu flags:%s\n",
 					       start_addr + (nr_read_total+i)*pagesize,
-					       PMAP_PFN&pagemap[i], pagecount[i],
+					       PMAP_PFN&pagemap[i],
+					       (unsigned long long)pagecount[i],
 					       flag2str(pageflags[i]));
 				} else if (PMAP_SWAPPED&pagemap[i] && !(pflags & RESIDENT_ONLY)) {
 					printf("   #%#lx -> swaptype:%#llx swapoff:%#08llx\n",
