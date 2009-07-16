@@ -37,8 +37,12 @@ x_lseek(int fd, off_t offset, int whence)
 {
 	off_t off = lseek(fd, offset, whence);
 	if (off == (off_t)-1) {
-		fprintf(stderr, "ERROR: lseek() failed: %s\n",
-		        strerror(errno));
+		if (errno) {
+			fprintf(stderr, "ERROR: lseek() failed: %s\n",
+				strerror(errno));
+		} else {
+			fprintf(stderr, "ERROR: lseek() failed.\n");
+		}
 		exit(1);
 	}
 	return off;
@@ -49,8 +53,15 @@ x_read(int fd, void* buf, size_t count)
 {
 	ssize_t got = read(fd, buf, count);
 	if (got < 0 || (size_t)got != count) {
-		fprintf(stderr, "ERROR: read() failed: %s\n",
-		        strerror(errno));
+		if (errno) {
+			fprintf(stderr,
+				"ERROR: read() failure, tried to read %zu bytes, got %zd: %s\n",
+				count, got, strerror(errno));
+		} else {
+			fprintf(stderr,
+				"ERROR: read() failure, tried to read %zu bytes, got %zd.\n",
+				count, got);
+		}
 		exit(1);
 	}
 	return got;
