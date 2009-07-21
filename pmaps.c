@@ -160,10 +160,10 @@ typedef enum {
 } print_flags_t;
 
 static void
-pmaps(int pid, print_flags_t pflags, regex_t* regex)
+pmaps(int pid, print_flags_t pflags, regex_t* regex, int fd_kflags, int fd_kcount)
 {
 	FILE* maps = NULL;
-	int fd_p=-1, fd_f=-1, fd_c=-1;
+	int fd_p=-1;
 	unsigned long start_addr, end_addr;
 	char* line=0;
 	size_t line_n=0;
@@ -181,10 +181,6 @@ pmaps(int pid, print_flags_t pflags, regex_t* regex)
 			pid, strerror(errno));
 		goto done;
 	}
-	fd_f = open("/proc/kpageflags", O_RDONLY);
-	if (fd_f<0) { perror("ERROR: could not open /proc/kpageflags"); goto done; }
-	fd_c = open("/proc/kpagecount", O_RDONLY);
-	if (fd_c<0) { perror("ERROR: could not open /proc/kpagecount"); goto done; }
 	while (1) {
 		int ret = getline(&line, &line_n, maps);
 		if (ret == -1) {
@@ -220,8 +216,8 @@ pmaps(int pid, print_flags_t pflags, regex_t* regex)
 				// byte reads. Let's just ignore such cases.
 				continue;
 			}
-			populate(fd_f, pageflags, nr_read);
-			populate(fd_c, pagecount, nr_read);
+			populate(fd_kflags, pageflags, nr_read);
+			populate(fd_kcount, pagecount, nr_read);
 			for (unsigned i=0; i < nr_read; ++i) {
 				if (PMAP_PRESENT&pagemap[i] && !(pflags & SWAPPED_ONLY)) {
 					printf("    %#lx -> pfn:%#08llx count:%4llu flags:%s\n",
@@ -246,8 +242,6 @@ pmaps(int pid, print_flags_t pflags, regex_t* regex)
 	}
 done:
 	free(line);
-	if (fd_c != -1) close(fd_c);
-	if (fd_f != -1) close(fd_f);
 	if (fd_p != -1) close(fd_p);
 	if (maps != NULL) fclose(maps);
 }
@@ -286,7 +280,7 @@ usage()
 
 int main(int argc, char** argv)
 {
-	int opt;
+	int opt, fd_kflags, fd_kcount;
 	print_flags_t pflags = 0;
 	char* regstr = NULL;
 	regex_t regex;
@@ -344,6 +338,16 @@ int main(int argc, char** argv)
 			return 1;
 		}
 	}
+	fd_kflags = open("/proc/kpageflags", O_RDONLY);
+	if (fd_kflags<0) {
+		perror("ERROR: could not open /proc/kpageflags");
+		return 1;
+	}
+	fd_kcount = open("/proc/kpagecount", O_RDONLY);
+	if (fd_kcount<0) {
+		perror("ERROR: could not open /proc/kpagecount");
+		return 1;
+	}
 	for (int i=optind; i < argc; ++i) {
 		int pid = atoi(argv[i]);
 		const char* note1 = "";
@@ -353,8 +357,10 @@ int main(int argc, char** argv)
 		if (pflags & STACK_ONLY)    note2 = " [stack-only]";
 		if (pflags & HEAP_ONLY)     note2 = " [heap-only]";
 		printf("PID: %d%s%s\n", pid, note1, note2);
-		pmaps(pid, pflags, regstr ? &regex : NULL);
+		pmaps(pid, pflags, regstr ? &regex : NULL, fd_kflags, fd_kcount);
 	}
 	if (regstr) regfree(&regex);
+	close(fd_kflags);
+	close(fd_kcount);
 	return 0;
 }
