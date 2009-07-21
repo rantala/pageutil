@@ -162,19 +162,29 @@ typedef enum {
 static void
 pmaps(int pid, print_flags_t pflags, regex_t* regex)
 {
-	FILE* maps;
-	int fd_p, fd_f, fd_c;
+	FILE* maps = NULL;
+	int fd_p=-1, fd_f=-1, fd_c=-1;
 	unsigned long start_addr, end_addr;
 	char* line=0;
-	size_t line_n;
+	size_t line_n=0;
 	maps = fopen(proc_fn(pid, "maps"), "r");
-	if (!maps) { perror("ERROR: could not open /proc/pid/maps"); exit(1); }
+	if (!maps) {
+		fprintf(stderr,
+			"ERROR: could not open /proc/%d/maps: %s\n",
+			pid, strerror(errno));
+		goto done;
+	}
 	fd_p = open(proc_fn(pid, "pagemap"), O_RDONLY);
-	if (fd_p<0) { perror("ERROR: could not open /proc/pid/pagemap"); exit(1); }
+	if (fd_p<0) {
+		fprintf(stderr,
+			"ERROR: could not open /proc/%d/pagemap: %s\n",
+			pid, strerror(errno));
+		goto done;
+	}
 	fd_f = open("/proc/kpageflags", O_RDONLY);
-	if (fd_f<0) { perror("ERROR: could not open /proc/kpageflags"); exit(1); }
+	if (fd_f<0) { perror("ERROR: could not open /proc/kpageflags"); goto done; }
 	fd_c = open("/proc/kpagecount", O_RDONLY);
-	if (fd_c<0) { perror("ERROR: could not open /proc/kpagecount"); exit(1); }
+	if (fd_c<0) { perror("ERROR: could not open /proc/kpagecount"); goto done; }
 	while (1) {
 		int ret = getline(&line, &line_n, maps);
 		if (ret == -1) {
@@ -193,7 +203,7 @@ pmaps(int pid, print_flags_t pflags, regex_t* regex)
 		if (sscanf(line, "%lx-%lx", &start_addr, &end_addr) != 2) {
 			(void) fprintf(stderr,
 			"ERROR: did not understand line from /proc/pid/maps. :(\n");
-			exit(1);
+			goto done;
 		}
 		(void) printf("%s", line);
 		unsigned long page_start = start_addr / pagesize;
@@ -236,10 +246,10 @@ pmaps(int pid, print_flags_t pflags, regex_t* regex)
 	}
 done:
 	free(line);
-	close(fd_c);
-	close(fd_f);
-	close(fd_p);
-	fclose(maps);
+	if (fd_c != -1) close(fd_c);
+	if (fd_f != -1) close(fd_f);
+	if (fd_p != -1) close(fd_p);
+	if (maps != NULL) fclose(maps);
 }
 
 static struct option long_options[] = {
