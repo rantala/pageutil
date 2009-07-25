@@ -246,7 +246,7 @@ done:
 	if (maps != NULL) fclose(maps);
 }
 
-static struct option long_options[] = {
+static const struct option long_options[] = {
 	{"swapped", 0, 0, 'S'},
 	{"resident", 0, 0, 'R'},
 	{"stack", 0, 0, 256},
