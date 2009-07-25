@@ -49,7 +49,7 @@ x_lseek(int fd, off_t offset, int whence)
 }
 
 static ssize_t
-x_read(int fd, void* buf, size_t count)
+x_read(int fd, void *buf, size_t count)
 {
 	ssize_t got = read(fd, buf, count);
 	if (got < 0 || (size_t)got != count) {
@@ -79,8 +79,8 @@ static uint64_t pageflags[BSIZE];
 static uint64_t pagecount[BSIZE];
 static unsigned long pagesize = 0;
 
-static const char*
-proc_fn(int pid, const char* procfile)
+static const char *
+proc_fn(int pid, const char *procfile)
 {
 	static char buf[64];
 	(void) snprintf(buf, sizeof(buf), "/proc/%d/%s", pid, procfile);
@@ -88,7 +88,7 @@ proc_fn(int pid, const char* procfile)
 	return buf;
 }
 
-static const char* flagname[] = {
+static const char *flagname[] = {
 	"locked",
 	"error",
 	"referenced",
@@ -102,13 +102,13 @@ static const char* flagname[] = {
 	"buddy",
 };
 
-static const char*
+static const char *
 flag2str(uint64_t flag)
 {
 	static char buf[128];
 	unsigned i, n=0;
 	buf[0]=0;
-	for (i=0; i < sizeof(flagname)/sizeof(char*); ++i) {
+	for (i=0; i < sizeof(flagname)/sizeof(char *); ++i) {
 		if (flag & (1<<i)) {
 			n += snprintf(buf+n, n-sizeof(buf), 
 			              "%s,", flagname[i]);
@@ -136,7 +136,7 @@ flag2str(uint64_t flag)
 #define PMAP_SWAP_OFF  (PMAP_PFN & ~PMAP_SWAP_TYPE)
 
 static void
-populate(int fd, uint64_t* dest, unsigned long nr)
+populate(int fd, uint64_t *dest, unsigned long nr)
 {
 	unsigned long i, pfn;
 	uint64_t entry;
@@ -160,12 +160,12 @@ typedef enum {
 } print_flags_t;
 
 static void
-pmaps(int pid, print_flags_t pflags, regex_t* regex, int fd_kflags, int fd_kcount)
+pmaps(int pid, print_flags_t pflags, regex_t *regex, int fd_kflags, int fd_kcount)
 {
-	FILE* maps = NULL;
+	FILE *maps = NULL;
 	int fd_p=-1;
 	unsigned long start_addr, end_addr;
-	char* line=0;
+	char *line=0;
 	size_t line_n=0;
 	maps = fopen(proc_fn(pid, "maps"), "r");
 	if (!maps) {
@@ -278,11 +278,11 @@ usage()
 	       );
 }
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
 	int opt, fd_kflags, fd_kcount;
 	print_flags_t pflags = 0;
-	char* regstr = NULL;
+	char *regstr = NULL;
 	regex_t regex;
 	while ((opt = getopt_long(argc, argv, "r:SRh",
 			long_options, NULL)) != -1) {
@@ -327,7 +327,7 @@ int main(int argc, char** argv)
 	if (regstr) {
 		int comp;
 		if ((comp = regcomp(&regex, regstr, REG_EXTENDED|REG_NOSUB)) != 0) {
-			char* err = NULL;
+			char *err = NULL;
 			size_t errlen = regerror(comp, &regex, NULL, 0);
 			if ((err = malloc(errlen)) != NULL) {
 				regerror(comp, &regex, err, errlen);
@@ -350,8 +350,7 @@ int main(int argc, char** argv)
 	}
 	for (int i=optind; i < argc; ++i) {
 		int pid = atoi(argv[i]);
-		const char* note1 = "";
-		const char* note2 = "";
+		const char *note1 = "", *note2 = "";
 		if (pflags & RESIDENT_ONLY) note1 = " [resident-pages-only]";
 		if (pflags & SWAPPED_ONLY)  note1 = " [swapped-pages-only]";
 		if (pflags & STACK_ONLY)    note2 = " [stack-only]";
