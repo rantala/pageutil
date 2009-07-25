@@ -48,20 +48,24 @@
 
 #define PROGNAME "resolved-symbols"
 
+typedef struct library library_t;
+
 /* Represents one entry from the Procedure Linkage Table (PLT). We read the
  * symbols from the PLT with objdump. In order to figure out if the symbol has
  * been resolved, we have to read the process's memory, and look for the Global
  * Offset Tables (GOT).
  *
- *   symbol   : Symbol name, eg. "waitpid", "strcpy", or "g_object_ref".
- *              Dynamically allocated.
- *   resolved : Has the particular ELF object resolved the actual address of
- *              the symbol?
+ *   symbol      : Symbol name, eg. "waitpid", "strcpy", or "g_object_ref".
+ *                 Dynamically allocated.
+ *   resolved    : Has this symbol been resolved?
+ *   resolved_to : The ELF object that the symbol has been resolved to. May be
+ *                 NULL in some cases even if the symbol has been resolved.
  */
 typedef struct
 {
 	char *symbol;
 	unsigned resolved;
+	const library_t *resolved_to;
 } pltsym_t;
 
 /* Virtual memory area from /proc/pid/maps, eg. b7f59000-b7f5a000.
@@ -110,7 +114,7 @@ typedef struct
  *    pltsyms           : Symbols from the PLT.
  *    pltsyms_cnt       : Counter for the PLT symbols.
  */
-typedef struct
+struct library
 {
 	char *path;
 	unsigned word_size;
@@ -122,7 +126,7 @@ typedef struct
 	pltsym_t *pltsyms;
 	unsigned vmas_cnt;
 	unsigned pltsyms_cnt;
-} library_t;
+};
 
 static int
 libname_cmp(const void *a, const void *b)
@@ -314,25 +318,46 @@ done:
 }
 
 static unsigned
-pltsym_resolved(const library_t* lib, size_t num, int pid)
+pltsyms_resolver(const library_t *libs, unsigned libs_cnt, int pid)
 {
-	assert(num < lib->pltsyms_cnt);
-	// Skip the first three words from the .got.plt, the actual entries
-	// begin after those.
-	unsigned long entry_addr = lib->vmas[0].begin + lib->elf_got_plt_off
-		+ 3*lib->word_size + num*lib->word_size;
-	//fprintf(stderr, "%s(): peeking @ %p\n", __func__, (void*)entry_addr);
-	long p = ptrace(PTRACE_PEEKDATA, pid, entry_addr, NULL);
-	if (p == -1) {
-		fprintf(stderr, "[%d]: ptrace() peekdata failure: %s\n",
-				pid, strerror(errno));
-		return 0;
+	for (unsigned i=0; i < libs_cnt; ++i) {
+		for (unsigned j=0; j < libs[i].pltsyms_cnt; ++j) {
+			unsigned long entry_addr = libs[i].vmas[0].begin + libs[i].elf_got_plt_off
+				+ 3*libs[i].word_size + j*libs[i].word_size;
+			//fprintf(stderr, "%s(): peeking @ %p\n", __func__, (void*)entry_addr);
+			long p = ptrace(PTRACE_PEEKDATA, pid, entry_addr, NULL);
+			if (p == -1) {
+				fprintf(stderr, "[%d]: ptrace() peekdata failure: %s\n",
+						pid, strerror(errno));
+				goto error;
+			}
+			unsigned long entry = p;
+			//fprintf(stderr, "   ............... 0x%08lx\n", entry);
+			if (entry >= (libs[i].vmas[0].begin + libs[i].elf_plt_off) &&
+			    entry <  (libs[i].vmas[0].begin + libs[i].elf_plt_off + libs[i].elf_plt_len)) {
+				goto nextsym;
+			}
+			libs[i].pltsyms[j].resolved = 1;
+			for (unsigned k=0; k < libs_cnt; ++k) {
+				for (unsigned v=0; v < libs[k].vmas_cnt; ++v) {
+					if (entry >= libs[k].vmas[v].begin &&
+					    entry <  libs[k].vmas[v].end) {
+						libs[i].pltsyms[j].resolved_to = &libs[k];
+						goto nextsym;
+					}
+				}
+			}
+			if (entry != 0) {
+				fprintf(stderr,
+					PROGNAME ": [%d]: unable to locate ELF object at 0x%08lx for resolved symbol '%s'.\n",
+					pid, entry, libs[i].pltsyms[j].symbol);
+			}
+nextsym:
+			;
+		}
 	}
-	unsigned long entry = p;
-	//fprintf(stderr, "   ............... 0x%08lx\n", entry);
-	if (entry >= (lib->vmas[0].begin + lib->elf_plt_off) &&
-	    entry <  (lib->vmas[0].begin + lib->elf_plt_off + lib->elf_plt_len))
-		return 0;
+	return 0;
+error:
 	return 1;
 }
 
@@ -482,11 +507,8 @@ int main(int argc, char** argv)
 					pid);
 			goto next;
 		}
-		for (unsigned i=0; i < libs_cnt; ++i) {
-			for (unsigned j=0; j < libs[i].pltsyms_cnt; ++j) {
-				libs[i].pltsyms[j].resolved =
-					pltsym_resolved(&libs[i], j, pid);
-			}
+		if (pltsyms_resolver(libs, libs_cnt, pid) != 0) {
+			goto next;
 		}
 		if (ptrace(PTRACE_DETACH, pid, NULL, NULL) == -1) {
 			fprintf(stderr, PROGNAME ": [%d]: warning: ptrace: unable to detach: %s\n",
@@ -512,14 +534,19 @@ int main(int argc, char** argv)
 					resolved, unresolved);
 			for (unsigned c=0, j=0; j < libs[i].pltsyms_cnt; ++j) {
 				unsigned r = libs[i].pltsyms[j].resolved;
+				const library_t *r_to = libs[i].pltsyms[j].resolved_to;
 				char *sym = libs[i].pltsyms[j].symbol;
 				if (resolved_only && r==0) continue;
 				if (unresolved_only && r==1) continue;
 				if (use_regex &&
 				    regexec(&regex, sym, 0, NULL, 0) != 0)
 					continue;
-				printf("%10d. [Resolved: %c] %s\n",
-					c++, r ? 'Y' : 'N', sym);
+				printf("%10d. [Resolved: %c] %s%s%s\n",
+					c++,
+					r_to != NULL ? 'Y' : 'N',
+					sym,
+					r ? "   ->   " : "",
+					r && r_to ? r_to->path : "");
 			}
 			fflush(stdout);
 		}
