@@ -145,7 +145,7 @@ symname_cmp(const void *a, const void *b)
 }
 
 static void
-lib_info_pltsyms(library_t* lib)
+lib_info_pltsyms(library_t *lib)
 {
 	char *cmd, *line=NULL;
 	size_t line_n=0;
@@ -153,7 +153,7 @@ lib_info_pltsyms(library_t* lib)
 		fprintf(stderr, PROGNAME ": ERROR: asprintf() failure.\n");
 		exit(1);
 	}
-	FILE* fp = popen(cmd, "r");
+	FILE *fp = popen(cmd, "r");
 	free(cmd);
 	if (fp == NULL) {
 		fprintf(stderr, PROGNAME ": ERROR: popen() failure.\n");
@@ -188,16 +188,15 @@ lib_info_pltsyms(library_t* lib)
 }
 
 static void
-lib_info_plt(library_t* lib)
+lib_info_plt(library_t *lib)
 {
-	char* cmd = NULL;
-	char* line = NULL;
+	char *cmd = NULL, *line = NULL;
 	size_t line_n = 0;
 	if (asprintf(&cmd, "readelf -WS %s", lib->path) == -1) {
 		fprintf(stderr, PROGNAME ": ERROR: asprintf() failure.\n");
 		exit(1);
 	}
-	FILE* fp = popen(cmd, "r");
+	FILE *fp = popen(cmd, "r");
 	free(cmd);
 	if (fp == NULL) {
 		fprintf(stderr, PROGNAME ": ERROR: popen() failure.\n");
@@ -241,7 +240,7 @@ lib_info(library_t *lib)
  * an ELF object. Returns 1 if it does, 0 otherwise.
  */
 static unsigned
-elf_info(const char* path, unsigned *word_size)
+elf_info(const char *path, unsigned *word_size)
 {
 	char header[5];
 	int ret = 0;
@@ -276,7 +275,7 @@ getlibs(int pid, library_t **libs_, unsigned *libs_cnt_)
 	}
 	if ((fp = fopen(maps, "r")) == NULL) goto done;
 	while (getline(&line, &line_n, fp) != -1) {
-		char* f = strchr(line, '/');
+		char *f = strchr(line, '/');
 		if (f == NULL) continue;
 		size_t flen = strlen(f);
 		if (flen > 1 && f[flen-1] == '\n') f[flen-1] = 0;
@@ -324,7 +323,7 @@ pltsyms_resolver(const library_t *libs, unsigned libs_cnt, int pid)
 		for (unsigned j=0; j < libs[i].pltsyms_cnt; ++j) {
 			unsigned long entry_addr = libs[i].vmas[0].begin + libs[i].elf_got_plt_off
 				+ 3*libs[i].word_size + j*libs[i].word_size;
-			//fprintf(stderr, "%s(): peeking @ %p\n", __func__, (void*)entry_addr);
+			//fprintf(stderr, "%s(): peeking @ %p\n", __func__, (void *)entry_addr);
 			long p = ptrace(PTRACE_PEEKDATA, pid, entry_addr, NULL);
 			if (p == -1) {
 				fprintf(stderr, "[%d]: ptrace() peekdata failure: %s\n",
@@ -365,7 +364,7 @@ error:
  * resolution and PLT and GOT updating. Check whether the process has these
  * environment variables defined.
  */
-static const char*
+static const char *
 check_environ(int pid)
 {
 	FILE *fp = NULL;
@@ -431,7 +430,7 @@ static const struct option long_options[] = {
 	{0, 0, 0, 0}
 };
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
 	regex_t regex;
 	int opt, resolved_only=0, unresolved_only=0, sort_elfs=0, sort_syms=0, use_regex=0;
