@@ -1,7 +1,7 @@
 /* This application lists per process memory mappings, and shows for each page
  * some details that the kernel exposes via various /proc interfaces.
  *
- * Copyright (C) 2009 Tommi Rantala <tt.rantala@gmail.com>
+ * Copyright (C) 2009, 2013 Tommi Rantala <tt.rantala@gmail.com>
  * 
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -31,6 +31,44 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+
+#include <linux/kernel-page-flags.h>
+
+#ifndef KPF_THP
+#define KPF_THP			22
+#endif
+
+#ifndef KPF_RESERVED
+#define KPF_RESERVED		32
+#endif
+
+#ifndef KPF_MLOCKED
+#define KPF_MLOCKED		33
+#endif
+
+#ifndef KPF_MAPPEDTODISK
+#define KPF_MAPPEDTODISK	34
+#endif
+
+#ifndef KPF_PRIVATE
+#define KPF_PRIVATE		35
+#endif
+
+#ifndef KPF_PRIVATE_2
+#define KPF_PRIVATE_2		36
+#endif
+
+#ifndef KPF_OWNER_PRIVATE
+#define KPF_OWNER_PRIVATE	37
+#endif
+
+#ifndef KPF_ARCH
+#define KPF_ARCH		38
+#endif
+
+#ifndef KPF_UNCACHED
+#define KPF_UNCACHED		39
+#endif
 
 static off_t
 x_lseek(int fd, off_t offset, int whence)
@@ -88,35 +126,61 @@ proc_fn(int pid, const char *procfile)
 	return buf;
 }
 
-static const char *flagname[] = {
-	"locked",
-	"error",
-	"referenced",
-	"uptodate",
-	"dirty",
-	"lru",
-	"active",
-	"slab",
-	"writeback",
-	"reclaim",
-	"buddy",
+static const char *const flagname[] = {
+	[KPF_LOCKED]               = "locked",
+	[KPF_ERROR]                = "error",
+	[KPF_REFERENCED]           = "referenced",
+	[KPF_UPTODATE]             = "uptodate",
+	[KPF_DIRTY]                = "dirty",
+	[KPF_LRU]                  = "lru",
+	[KPF_ACTIVE]               = "active",
+	[KPF_SLAB]                 = "slab",
+	[KPF_WRITEBACK]            = "writeback",
+	[KPF_RECLAIM]              = "reclaim",
+	[KPF_BUDDY]                = "buddy",
+	[KPF_MMAP]                 = "mmap",
+	[KPF_ANON]                 = "anon",
+	[KPF_SWAPCACHE]            = "swapcache",
+	[KPF_SWAPBACKED]           = "swapbacked",
+	[KPF_COMPOUND_HEAD]        = "compound_head",
+	[KPF_COMPOUND_TAIL]        = "compound_tail",
+	[KPF_HUGE]                 = "huge",
+	[KPF_UNEVICTABLE]          = "unevictable",
+	[KPF_HWPOISON]             = "hwpoison",
+	[KPF_NOPAGE]               = "nopage",
+	[KPF_KSM]                  = "ksm",
+	[KPF_THP]                  = "thp",
+	[KPF_RESERVED]             = "reserved",
+	[KPF_MLOCKED]              = "mlocked",
+	[KPF_MAPPEDTODISK]         = "mappedtodisk",
+	[KPF_PRIVATE]              = "private",
+	[KPF_PRIVATE_2]            = "private_2",
+	[KPF_OWNER_PRIVATE]        = "owner_private",
+	[KPF_ARCH]                 = "arch",
+	[KPF_UNCACHED]             = "uncached",
 };
 
 static const char *
-flag2str(uint64_t flag)
+flags2str(uint64_t flags)
 {
 	static char buf[128];
+	uint64_t unknown_flags=0;
 	unsigned i, n=0;
 	buf[0]=0;
-	for (i=0; i < sizeof(flagname)/sizeof(char *); ++i) {
-		if (flag & (1<<i)) {
-			n += snprintf(buf+n, n-sizeof(buf), 
-			              "%s,", flagname[i]);
-			flag &= ~(1<<i);
+	for (i=0; flags; flags>>=1, ++i) {
+		if (flags & 1) {
+			if (i < sizeof(flagname)/sizeof(flagname[0]) && flagname[i]) {
+				n += snprintf(buf+n, sizeof(buf)-n,
+						"%s,", flagname[i]);
+			} else {
+				n += snprintf(buf+n, sizeof(buf)-n,
+						"<bit %d>,", i);
+				unknown_flags |= 1<<i;
+			}
 		}
 	}
 	if (n>0) buf[n-1]=0;
-	if (flag) {
+	if (unknown_flags) {
 		static int once=0;
 		if (!once) {
 			fprintf(stderr,
@@ -224,7 +288,7 @@ pmaps(int pid, print_flags_t pflags, regex_t *regex, int fd_kflags, int fd_kcoun
 					       start_addr + (nr_read_total+i)*pagesize,
 					       PMAP_PFN&pagemap[i],
 					       (unsigned long long)pagecount[i],
-					       flag2str(pageflags[i]));
+					       flags2str(pageflags[i]));
 				} else if (PMAP_SWAPPED&pagemap[i] && !(pflags & RESIDENT_ONLY)) {
 					printf("   #%#lx -> swaptype:%#llx swapoff:%#08llx\n",
 					       start_addr + (nr_read_total+i)*pagesize,
